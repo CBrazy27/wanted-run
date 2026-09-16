@@ -1,2 +1,266 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><title>WANTED RUN</title></head><body><p>Use latest wanted-run.html from chat download if this stub remains.</p><script>location.replace('https://htmlpreview.github.io/?https://github.com/CBrazy27/wanted-run/blob/main/index.html')</script></body></html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<title>WANTED RUN</title>
+<style>
+html,body{margin:0;height:100%;height:100dvh;background:#1a1520;overflow:hidden;font-family:ui-monospace,Menlo,monospace;touch-action:none;user-select:none}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;left:0;right:0;top:0;z-index:5;pointer-events:none;padding:calc(8px + env(safe-area-inset-top)) 10px 0}
+.row{display:flex;justify-content:space-between;gap:8px}
+.panel{background:rgba(8,6,10,.88);border:1px solid #e8c547;padding:8px 10px;min-width:118px}
+.label{font-size:10px;letter-spacing:.14em;color:#b7b3a8}
+.val{font-size:20px;color:#e8c547}
+.val.cash{color:#3ddc84}
+.hp{height:8px;background:#3a2430;margin-top:6px}.hp>i{display:block;height:100%;background:#e24b4b;width:100%}
+#toast{position:fixed;top:22%;left:50%;transform:translateX(-50%);color:#ffe07a;letter-spacing:.12em;z-index:6;text-shadow:0 2px 0 #000;opacity:0;pointer-events:none}
+#end{display:none;position:fixed;left:50%;top:34%;transform:translate(-50%,-50%);width:min(340px,calc(100vw - 24px));z-index:8;background:#140f18;border:2px solid #e8c547;padding:18px 16px;text-align:center}
+#end.show{display:block}
+#end h1{margin:0 0 8px;color:#e8c547;letter-spacing:.14em}
+#end p{color:#ddd;font-size:13px;line-height:1.5;margin:0 0 14px}
+#again{width:100%;border:0;background:#e8c547;color:#111;font:800 16px ui-monospace,monospace;letter-spacing:.12em;padding:14px}
+#pad{position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom));width:140px;height:140px;border-radius:50%;z-index:7;background:rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.28)}
+#knob{position:absolute;width:58px;height:58px;border-radius:50%;background:#e8c547;left:41px;top:41px}
+#btns{position:fixed;right:14px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:7}
+.act{width:76px;height:76px;border-radius:50%;border:2px solid #e8c547;background:rgba(12,10,16,.85);color:#e8c547;font:800 12px ui-monospace,monospace}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><div class="row">
+<div class="panel"><div class="label">GOAL $100 + LOSE COPS</div><div class="val" id="time">0.0</div><div class="hp"><i id="hpbar"></i></div></div>
+<div class="panel" style="text-align:right"><div class="label">CASH</div><div class="val cash" id="cash">$0</div><div class="label" id="status">SAFE</div></div>
+</div></div>
+<div id="toast">PUNCH TO TAKE CASH</div>
+<div id="end"><h1 id="endtitle">DOWN</h1><p id="last"></p><button id="again" type="button">PLAY AGAIN</button></div>
+<div id="pad"><div id="knob"></div></div>
+<div id="btns"><button class="act" id="btnPunch" type="button">PUNCH</button></div>
+<script src="https://unpkg.com/three@0.160.1/build/three.min.js"></script>
+<script>
+(() => {
+const canvas=document.getElementById("c");
+const toastEl=document.getElementById("toast"), endEl=document.getElementById("end");
+const pad=document.getElementById("pad"), knob=document.getElementById("knob");
+let viewW=innerWidth, viewH=innerHeight;
+const renderer=new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(2, devicePixelRatio||1));
+renderer.setSize(viewW, viewH);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x1c1622);
+scene.fog=new THREE.Fog(0x1c1622, 18, 48);
+const camera=new THREE.PerspectiveCamera(60, viewW/viewH, 0.1, 80);
+function resize(){
+  viewW=window.visualViewport?window.visualViewport.width:innerWidth;
+  viewH=window.visualViewport?window.visualViewport.height:innerHeight;
+  camera.aspect=viewW/viewH; camera.updateProjectionMatrix();
+  renderer.setSize(viewW, viewH, false);
+}
+window.addEventListener("resize", resize);
+if(window.visualViewport) window.visualViewport.addEventListener("resize", resize);
+scene.add(new THREE.AmbientLight(0x8890a8, 0.7));
+const sun=new THREE.DirectionalLight(0xffe6b0, 0.85);
+sun.position.set(12, 20, 8); scene.add(sun);
+const WORLD=42;
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), new THREE.MeshLambertMaterial({color:0x3a3a42}));
+ground.rotation.x=-Math.PI/2; scene.add(ground);
+const streetM=new THREE.MeshLambertMaterial({color:0x2a2a32});
+function street(x,z,w,l){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,0.04,l), streetM);
+  m.position.set(x,0.02,z); scene.add(m);
+}
+street(0,0,6,WORLD); street(0,0,WORLD,6);
+street(-12,0,5,WORLD); street(12,0,5,WORLD);
+street(0,-12,WORLD,5); street(0,12,WORLD,5);
+const buildings=[];
+function building(x,z,w,h,d){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({color:0x5a4a68}));
+  m.position.set(x,h/2,z); scene.add(m);
+  buildings.push({x,z,w,d,h});
+}
+[[-8,-8,6,5,6],[-8,8,6,6,6],[8,-8,6,4.5,6],[8,8,7,7,6],[-18,-8,5,4,5],[-18,8,5,5,5],[18,-8,5,6,5],[18,8,5,4,5],[-8,-18,6,5,5],[8,-18,6,3.5,5],[-8,18,6,5,5],[8,18,5,4,5]].forEach(a=>building(...a));
+function blocked(x,z,r){
+  if(Math.abs(x)>WORLD/2-1 || Math.abs(z)>WORLD/2-1) return true;
+  for(const b of buildings){ if(Math.abs(x-b.x)<b.w/2+r && Math.abs(z-b.z)<b.d/2+r) return true; }
+  return false;
+}
+function los(ax,az,bx,bz){
+  const dist=Math.hypot(bx-ax,bz-az), n=Math.max(4, dist*3);
+  for(let i=1;i<n;i++){
+    const t=i/n, x=ax+(bx-ax)*t, z=az+(bz-az)*t;
+    if(blocked(x,z,0.15)) return false;
+  }
+  return true;
+}
+function person(bodyCol, shirtCol){
+  const g=new THREE.Group();
+  const skin=new THREE.MeshLambertMaterial({color:0xe6c2a0});
+  const shirt=new THREE.MeshLambertMaterial({color:shirtCol});
+  const pants=new THREE.MeshLambertMaterial({color:bodyCol});
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,10), skin); head.position.y=1.42; g.add(head);
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(0.38,0.5,0.22), shirt); torso.position.y=1.05; g.add(torso);
+  const hips=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.2,0.2), pants); hips.position.y=0.72; g.add(hips);
+  const ll=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.55,0.12), pants); ll.position.set(-0.1,0.38,0); g.add(ll);
+  const rl=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.55,0.12), pants); rl.position.set(0.1,0.38,0); g.add(rl);
+  const la=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.45,0.1), shirt); la.position.set(-0.26,1.0,0); g.add(la);
+  const ra=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.45,0.1), shirt); ra.position.set(0.26,1.0,0); g.add(ra);
+  g.userData.arm=ra; scene.add(g); return g;
+}
+const playerM=person(0x2a2a32, 0xe8c547);
+playerM.position.set(0,0,4);
+let yaw=0, hp=100, cash=0, alive=0, cool=0, hurt=0, punchT=0, wanted=false, toastT=0, won=false;
+function spawnCrowd(){
+  const list=[];
+  for(let i=0;i<14;i++){
+    const m=person(0x3a3a48, new THREE.Color().setHSL(Math.random(),0.35,0.45));
+    let x=0,z=0,ok=false;
+    for(let k=0;k<30&&!ok;k++){ x=(Math.random()-0.5)*36; z=(Math.random()-0.5)*36; ok=!blocked(x,z,0.5)&&Math.hypot(x,z-4)>4; }
+    m.position.set(x,0,z);
+    list.push({m,a:Math.random()*6.28,wait:Math.random()*2,angry:0,robbed:false});
+  }
+  return list;
+}
+let peds=spawnCrowd();
+function makeCop(x,z){
+  const m=person(0x1a2a6a, 0x2d4aa0); m.position.set(x,0,z);
+  const light=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.06,0.08), new THREE.MeshLambertMaterial({color:0xff3333}));
+  light.position.set(0,1.58,0.05); m.add(light);
+  return {m,a:0,alert:0,lost:0};
+}
+let cops=[];
+const stick={x:0,y:0,id:null};
+function setStick(cx,cy){
+  const r=pad.getBoundingClientRect();
+  let mx=cx-(r.left+r.width/2), my=cy-(r.top+r.height/2);
+  const mag=Math.hypot(mx,my)||1, k=Math.min(1,mag/48);
+  stick.x=(mx/mag)*k; stick.y=(my/mag)*k;
+  knob.style.left=41+stick.x*34+"px"; knob.style.top=41+stick.y*34+"px";
+}
+function clearStick(){stick.x=stick.y=0;stick.id=null;knob.style.left="41px";knob.style.top="41px";}
+pad.addEventListener("pointerdown",e=>{e.preventDefault();stick.id=e.pointerId;pad.setPointerCapture(e.pointerId);setStick(e.clientX,e.clientY);});
+pad.addEventListener("pointermove",e=>{if(e.pointerId===stick.id)setStick(e.clientX,e.clientY);});
+pad.addEventListener("pointerup",clearStick);
+pad.addEventListener("pointercancel",clearStick);
+const keys={};
+window.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+let punchTap=false;
+document.getElementById("btnPunch").addEventListener("pointerdown",e=>{e.preventDefault();punchTap=true;});
+document.getElementById("again").onclick=reset;
+function toast(t){toastEl.textContent=t;toastEl.style.opacity=1;toastT=1.3;}
+function callCops(){
+  if(cops.length) return;
+  wanted=true;
+  cops=[makeCop(-16,0), makeCop(16,0), makeCop(0,-16)];
+  toast("COPS INCOMING");
+  document.getElementById("status").textContent="WANTED";
+}
+function punch(){
+  if(cool>0) return;
+  cool=0.35; punchT=0.2;
+  const fx=playerM.position.x+Math.sin(yaw)*1.1;
+  const fz=playerM.position.z+Math.cos(yaw)*1.1;
+  let hit=null,best=1.35;
+  for(const p of peds){ const d=Math.hypot(p.m.position.x-fx, p.m.position.z-fz); if(d<best){best=d;hit=p;} }
+  if(!hit){toast("WHIFF");return;}
+  hit.angry=5;
+  for(const p of peds){ if(p!==hit && Math.hypot(p.m.position.x-hit.m.position.x,p.m.position.z-hit.m.position.z)<4) p.angry=4; }
+  if(!hit.robbed){ hit.robbed=true; const take=20+Math.floor(Math.random()*25); cash+=take; toast("+$"+take); if(cash>=100) toast("$100 \u2014 LOSE THE COPS"); }
+  else toast("FIGHT");
+  callCops();
+}
+function hurtP(n){ if(hurt>0) return; hp-=n; hurt=0.4; if(hp<=0) end(false); }
+function end(win){
+  won=true;
+  document.getElementById("endtitle").textContent=win?"YOU MADE IT":"DOWN";
+  document.getElementById("last").innerHTML=win?("Got $"+cash+" and lost the cops."):("Lasted "+alive.toFixed(1)+"s<br/>Cash $"+cash);
+  endEl.classList.add("show");
+}
+function reset(){
+  endEl.classList.remove("show");
+  playerM.position.set(0,0,4); yaw=0; hp=100; cash=0; alive=0; cool=0; hurt=0; wanted=false; won=false;
+  cops.forEach(c=>scene.remove(c.m)); cops=[];
+  peds.forEach(p=>scene.remove(p.m)); peds=spawnCrowd();
+  document.getElementById("status").textContent="SAFE";
+  toast("PUNCH TO TAKE CASH");
+}
+toast("PUNCH TO TAKE CASH");
+const camPos=new THREE.Vector3(0,3.2,8);
+function update(dt){
+  if(won) return;
+  alive+=dt; cool=Math.max(0,cool-dt); hurt=Math.max(0,hurt-dt); punchT=Math.max(0,punchT-dt);
+  if(toastT>0){toastT-=dt; if(toastT<=0) toastEl.style.opacity=0;}
+  if(keys[" "]||punchTap){punch();punchTap=false;keys[" "]=false;}
+  let ix=stick.x, iy=stick.y;
+  if(keys["a"]||keys["arrowleft"]) ix-=1;
+  if(keys["d"]||keys["arrowright"]) ix+=1;
+  if(keys["w"]||keys["arrowup"]) iy-=1;
+  if(keys["s"]||keys["arrowdown"]) iy+=1;
+  const mag=Math.hypot(ix,iy); if(mag>1){ix/=mag;iy/=mag;}
+  const fwdX=Math.sin(yaw), fwdZ=Math.cos(yaw);
+  const rgtX=Math.cos(yaw), rgtZ=-Math.sin(yaw);
+  const mx=fwdX*(-iy)+rgtX*ix;
+  const mz=fwdZ*(-iy)+rgtZ*ix;
+  if(mag>0.12){
+    const ta=Math.atan2(mx,mz);
+    let d=ta-yaw; while(d>Math.PI)d-=Math.PI*2; while(d<-Math.PI)d+=Math.PI*2;
+    yaw+=d*Math.min(1,dt*8);
+  }
+  const spd=6.2;
+  let nx=playerM.position.x+mx*spd*dt;
+  let nz=playerM.position.z+mz*spd*dt;
+  if(!blocked(nx, playerM.position.z, 0.35)) playerM.position.x=nx;
+  if(!blocked(playerM.position.x, nz, 0.35)) playerM.position.z=nz;
+  playerM.rotation.y=yaw;
+  if(playerM.userData.arm) playerM.userData.arm.rotation.x=punchT>0?-1.4:0;
+  for(const p of peds){
+    if(p.angry>0){
+      p.angry-=dt;
+      const a=Math.atan2(playerM.position.x-p.m.position.x, playerM.position.z-p.m.position.z);
+      p.m.rotation.y=a;
+      const px=p.m.position.x+Math.sin(a)*3.2*dt, pz=p.m.position.z+Math.cos(a)*3.2*dt;
+      if(!blocked(px,pz,0.3)){p.m.position.x=px;p.m.position.z=pz;}
+      if(Math.hypot(p.m.position.x-playerM.position.x,p.m.position.z-playerM.position.z)<0.7) hurtP(8);
+    } else {
+      p.wait-=dt;
+      if(p.wait<=0){p.a=Math.random()*6.28;p.wait=1+Math.random()*2;}
+      const px=p.m.position.x+Math.sin(p.a)*1.2*dt, pz=p.m.position.z+Math.cos(p.a)*1.2*dt;
+      if(!blocked(px,pz,0.3)){p.m.position.x=px;p.m.position.z=pz;p.m.rotation.y=p.a;} else p.wait=0;
+    }
+  }
+  let seen=false;
+  for(const c of cops){
+    const dx=playerM.position.x-c.m.position.x, dz=playerM.position.z-c.m.position.z;
+    const dist=Math.hypot(dx,dz);
+    const facing=Math.atan2(dx,dz);
+    let diff=facing-c.a; while(diff>Math.PI)diff-=Math.PI*2; while(diff<-Math.PI)diff+=Math.PI*2;
+    const cone=Math.abs(diff)<0.7 && dist<11 && los(c.m.position.x,c.m.position.z,playerM.position.x,playerM.position.z);
+    if(cone || dist<2.2){c.alert=6;c.lost=0;seen=true;}
+    else if(c.alert>0){c.lost+=dt; if(c.lost>2.8) c.alert=0;}
+    if(c.alert>0){
+      c.a=facing; c.m.rotation.y=c.a;
+      const px=c.m.position.x+Math.sin(c.a)*5.4*dt, pz=c.m.position.z+Math.cos(c.a)*5.4*dt;
+      if(!blocked(px,pz,0.35)){c.m.position.x=px;c.m.position.z=pz;}
+      if(dist<0.85) hurtP(16);
+    } else { c.a+=dt*0.4; c.m.rotation.y=c.a; }
+  }
+  if(cash>=100 && wanted && !seen && cops.every(c=>c.alert<=0)) end(true);
+  const back=4.4, height=2.35;
+  const tx=playerM.position.x-Math.sin(yaw)*back;
+  const tz=playerM.position.z-Math.cos(yaw)*back;
+  camPos.x+=(tx-camPos.x)*Math.min(1,dt*5);
+  camPos.z+=(tz-camPos.z)*Math.min(1,dt*5);
+  camPos.y+=(height-camPos.y)*Math.min(1,dt*5);
+  camera.position.copy(camPos);
+  camera.lookAt(playerM.position.x, 1.15, playerM.position.z);
+  document.getElementById("time").textContent=alive.toFixed(1);
+  document.getElementById("cash").textContent="$"+cash;
+  document.getElementById("hpbar").style.width=Math.max(0,hp)+"%";
+}
+let last=performance.now();
+function loop(now){ const dt=Math.min(0.033,(now-last)/1000); last=now; update(dt); renderer.render(scene,camera); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
